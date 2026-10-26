@@ -1,5 +1,6 @@
 package com.saranomy.nolauncher
 
+import android.content.ComponentName
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.combinedClickable
@@ -18,8 +19,11 @@ import androidx.compose.ui.unit.dp
 
 data class AppItem(
     val name: String,
-    val packageName: String
+    val packageName: String,
+    val component: ComponentName
 ) : Comparable<AppItem> {
+    val key: String get() = component.flattenToString()
+
     override fun compareTo(other: AppItem): Int {
         return name.compareTo(other.name, true)
     }
@@ -39,7 +43,7 @@ data class AppItem(
                 .padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            NoLauncher.icons[packageName]?.let {
+            NoLauncher.icons[key]?.let {
                 Image(
                     bitmap = it,
                     contentDescription = null,
