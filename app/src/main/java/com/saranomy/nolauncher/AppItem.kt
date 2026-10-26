@@ -44,10 +44,7 @@ data class AppItem(
                 .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (checked != null) {
-                Checkbox(checked = checked, onCheckedChange = null)
-            }
-            NoLauncher.icons[key]?.let {
+                        NoLauncher.icons[key]?.let {
                 Image(
                     bitmap = it,
                     contentDescription = null,
@@ -58,8 +55,13 @@ data class AppItem(
                 text = name,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 12.dp)
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
             )
+            if (checked != null) {
+                Checkbox(checked = checked, onCheckedChange = null)
+            }
         }
     }
 }
