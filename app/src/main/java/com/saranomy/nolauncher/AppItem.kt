@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -30,7 +31,7 @@ data class AppItem(
 
     @OptIn(ExperimentalFoundationApi::class)
     @Composable
-    fun Display(onClick: () -> Unit, onLongClick: () -> Unit) {
+    fun Display(checked: Boolean?, onClick: () -> Unit, onLongClick: () -> Unit) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -40,9 +41,12 @@ data class AppItem(
                     onClick = onClick,
                     onLongClick = onLongClick
                 )
-                .padding(16.dp),
+                .padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            if (checked != null) {
+                Checkbox(checked = checked, onCheckedChange = null)
+            }
             NoLauncher.icons[key]?.let {
                 Image(
                     bitmap = it,
