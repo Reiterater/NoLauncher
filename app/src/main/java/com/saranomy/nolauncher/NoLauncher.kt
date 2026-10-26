@@ -254,7 +254,7 @@ class NoLauncher : ComponentActivity() {
                         }
                     }
                     if (temp.none { it.component == own }) {
-                        val item = AppItem(getString(R.string.app_name), packageName, own)
+                        val item = AppItem(applicationInfo.loadLabel(packageManager).toString(), packageName, own)
                         temp.add(item)
                         if (!icons.containsKey(item.key)) {
                             icon(item.key, applicationInfo.loadIcon(packageManager))
