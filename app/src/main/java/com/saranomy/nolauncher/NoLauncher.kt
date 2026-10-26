@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.*
@@ -32,6 +34,7 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
@@ -49,12 +52,16 @@ class NoLauncher : ComponentActivity() {
     private var query by mutableStateOf("")
     private var loading by mutableStateOf(false)
     private var scrolling by mutableStateOf(false)
+    private var editing by mutableStateOf(false)
+    private var hidden by mutableStateOf(setOf<String>())
     private lateinit var appChangeReceiver: AppChangeReceiver
     private lateinit var focusManager: FocusManager
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        hidden = getSharedPreferences("nolauncher", MODE_PRIVATE)
+            .getStringSet("hidden", emptySet())!!.toSet()
         setContent {
             focusManager = LocalFocusManager.current
             val coroutineScope = rememberCoroutineScope()
@@ -92,6 +99,12 @@ class NoLauncher : ComponentActivity() {
                                 }
                             },
                             singleLine = true,
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
+                            keyboardActions = KeyboardActions(onGo = {
+                                if (!editing) {
+                                    queried.firstOrNull()?.let { launchApp(it) }
+                                }
+                            }),
                             colors = textFieldColors(
                                 containerColor = Color.Transparent,
                                 focusedIndicatorColor = Color.Transparent,
@@ -109,29 +122,29 @@ class NoLauncher : ComponentActivity() {
                                 key = {
                                     it.key
                                 }
-                            ) {
-                                it.Display(onClick = {
-                                    try {
-                                        startActivity(
-                                            Intent(Intent.ACTION_MAIN)
-                                                .addCategory(Intent.CATEGORY_LAUNCHER)
-                                                .setComponent(it.component)
-                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
-                                        )
-                                    } catch (ignored: Exception) {
+                            ) { app ->
+                                app.Display(
+                                    checked = if (editing) app.key !in hidden else null,
+                                    onClick = {
+                                        if (editing) {
+                                            setHidden(app.key, app.key !in hidden)
+                                        } else {
+                                            launchApp(app)
+                                        }
+                                    },
+                                    onLongClick = {
+                                        try {
+                                            startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.packageName}")))
+                                        } catch (ignored: Exception) {
+                                        }
                                     }
-                                }, onLongClick = {
-                                    try {
-                                        startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${it.packageName}")))
-                                    } catch (ignored: Exception) {
-                                    }
-                                })
+                                )
                             }
                             if (apps.isNotEmpty() && query.isEmpty()) {
                                 item {
                                     Text(
-                                        text = "${stringResource(id = R.string.app_name)} ${BuildConfig.VERSION_NAME}",
-                                        style = MaterialTheme.typography.bodySmall,
+                                        text = if (editing) "Done" else "Show/Hide apps",
+                                        style = MaterialTheme.typography.bodyMedium,
                                         textAlign = TextAlign.Center,
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -139,18 +152,8 @@ class NoLauncher : ComponentActivity() {
                                                 interactionSource = remember { MutableInteractionSource() },
                                                 indication = null
                                             ) {
-                                                try {
-                                                    startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=${BuildConfig.APPLICATION_ID}")).apply {
-                                                        flags = Intent.FLAG_ACTIVITY_NO_HISTORY or Intent.FLAG_ACTIVITY_MULTIPLE_TASK or Intent.FLAG_ACTIVITY_NEW_DOCUMENT
-                                                    })
-                                                } catch (e: Exception) {
-                                                    startActivity(
-                                                        Intent(
-                                                            Intent.ACTION_VIEW,
-                                                            Uri.parse("https://play.google.com/store/apps/details?id=${BuildConfig.APPLICATION_ID}")
-                                                        )
-                                                    )
-                                                }
+                                                editing = !editing
+                                                query()
                                             }
                                             .padding(16.dp)
                                     )
@@ -199,9 +202,29 @@ class NoLauncher : ComponentActivity() {
         @Suppress("DEPRECATION")
         super.onBackPressed()
         query = ""
+        editing = false
         query()
         focusManager.clearFocus()
         scrolling = true
+    }
+
+    private fun launchApp(app: AppItem) {
+        try {
+            startActivity(
+                Intent(Intent.ACTION_MAIN)
+                    .addCategory(Intent.CATEGORY_LAUNCHER)
+                    .setComponent(app.component)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+            )
+        } catch (ignored: Exception) {
+        }
+    }
+
+    private fun setHidden(key: String, hide: Boolean) {
+        hidden = if (hide) hidden + key else hidden - key
+        getSharedPreferences("nolauncher", MODE_PRIVATE)
+            .edit().putStringSet("hidden", HashSet(hidden)).apply()
+        query()
     }
 
     fun load() {
@@ -249,18 +272,12 @@ class NoLauncher : ComponentActivity() {
 
     private fun query() {
         CoroutineScope(Dispatchers.IO).launch {
-            val temp = arrayListOf<AppItem>()
             val matchQuery = query.trim()
+            val source = if (editing) apps else apps.filter { it.key !in hidden }
             queried = if (matchQuery.isEmpty()) {
-                apps.toList()
+                source
             } else {
-                apps.forEach {
-                    if (it.name.contains(matchQuery, true)) {
-                        temp.add(it)
-                    }
-                }
-                temp.sort()
-                temp
+                source.filter { it.name.contains(matchQuery, true) }
             }
         }
     }
