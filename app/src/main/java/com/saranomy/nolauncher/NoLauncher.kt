@@ -1,8 +1,10 @@
 package com.saranomy.nolauncher
 
+import android.content.ComponentName
 import android.content.Intent
 import android.content.IntentFilter
 import android.content.pm.PackageManager
+import android.content.pm.ResolveInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
@@ -105,12 +107,17 @@ class NoLauncher : ComponentActivity() {
                             items(
                                 items = queried,
                                 key = {
-                                    it.packageName
+                                    it.key
                                 }
                             ) {
                                 it.Display(onClick = {
                                     try {
-                                        startActivity(packageManager.getLaunchIntentForPackage(it.packageName))
+                                        startActivity(
+                                            Intent(Intent.ACTION_MAIN)
+                                                .addCategory(Intent.CATEGORY_LAUNCHER)
+                                                .setComponent(it.component)
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                                        )
                                     } catch (ignored: Exception) {
                                     }
                                 }, onLongClick = {
@@ -201,32 +208,33 @@ class NoLauncher : ComponentActivity() {
         CoroutineScope(Dispatchers.IO).launch {
             loading = true
             try {
-                val temp = arrayListOf<AppItem>()
+                val launcherIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
                 val result = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU)
-                    packageManager.getInstalledApplications(PackageManager.ApplicationInfoFlags.of(0))
-                else packageManager.getInstalledApplications(PackageManager.GET_META_DATA)
-                val appHashCount = apps.sumOf {
-                    it.packageName.hashCode()
-                }
-                val resultHashCount = result.sumOf {
-                    if (packageManager.getLaunchIntentForPackage(it.packageName) != null) {
-                        it.packageName.hashCode()
-                    } else {
-                        0
-                    }
-                }
+                    packageManager.queryIntentActivities(launcherIntent, PackageManager.ResolveInfoFlags.of(0))
+                else packageManager.queryIntentActivities(launcherIntent, 0)
+
+                val own = ComponentName(this@NoLauncher, NoLauncher::class.java)
+                fun ResolveInfo.cn() = ComponentName(activityInfo.packageName, activityInfo.name)
+
+                val appHashCount = apps.sumOf { it.key.hashCode() }
+                val resultHashCount = result.sumOf { it.cn().flattenToString().hashCode() } +
+                        own.flattenToString().hashCode()
+
                 if (appHashCount != resultHashCount || apps.isEmpty() || (query.trim().isEmpty() && queried.isEmpty())) {
-                    result.forEach { info ->
-                        if (packageManager.getLaunchIntentForPackage(info.packageName) != null  || info.packageName == packageName) {
-                            temp.add(
-                                AppItem(
-                                    name = info.loadLabel(packageManager).toString(),
-                                    packageName = info.packageName,
-                                )
-                            )
-                            if (!icons.containsKey(info.packageName)) {
-                                icon(info.packageName, info.loadIcon(packageManager))
-                            }
+                    val temp = arrayListOf<AppItem>()
+                    result.forEach { ri ->
+                        val cn = ri.cn()
+                        val item = AppItem(ri.loadLabel(packageManager).toString(), cn.packageName, cn)
+                        temp.add(item)
+                        if (!icons.containsKey(item.key)) {
+                            icon(item.key, ri.loadIcon(packageManager))
+                        }
+                    }
+                    if (temp.none { it.component == own }) {
+                        val item = AppItem(getString(R.string.app_name), packageName, own)
+                        temp.add(item)
+                        if (!icons.containsKey(item.key)) {
+                            icon(item.key, applicationInfo.loadIcon(packageManager))
                         }
                     }
                     temp.sort()
@@ -257,7 +265,7 @@ class NoLauncher : ComponentActivity() {
         }
     }
 
-    private fun icon(packageName: String, drawable: Drawable) {
+    private fun icon(key: String, drawable: Drawable) {
         val bitmap = Bitmap.createBitmap(
             if (drawable.intrinsicWidth > 0) drawable.intrinsicWidth else 1,
             if (drawable.intrinsicHeight > 0) drawable.intrinsicHeight else 1,
@@ -268,6 +276,6 @@ class NoLauncher : ComponentActivity() {
             setBounds(0, 0, canvas.width, canvas.height)
             draw(canvas)
         }
-        icons[packageName] = bitmap.asImageBitmap()
+        icons[key] = bitmap.asImageBitmap()
     }
 }
