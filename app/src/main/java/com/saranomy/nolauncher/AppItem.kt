@@ -36,8 +36,6 @@ data class AppItem(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
                     onClick = onClick,
                     onLongClick = onLongClick
                 )
