@@ -172,7 +172,7 @@ class NoLauncher : ComponentActivity() {
                                         Text("Show icons", modifier = Modifier.weight(1f))
                                         Switch(
                                             checked = showIcons,
-                                            onCheckedChange = { setShowIcons(it) }
+                                            onCheckedChange = { changeShowIcons(it) }
                                         )
                                     }
                                 }
