@@ -15,7 +15,6 @@ import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -44,13 +43,18 @@ class NoLauncher : ComponentActivity() {
     private var scrolling by mutableStateOf(false)
     private var editing by mutableStateOf(false)
     private var hidden by mutableStateOf(setOf<String>())
+    private var spacing by mutableStateOf(10)
+    private var showIcons by mutableStateOf(true)
+    private var settingsOpen by mutableStateOf(false)
     private lateinit var appChangeReceiver: AppChangeReceiver
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        hidden = getSharedPreferences("nolauncher", MODE_PRIVATE)
-            .getStringSet("hidden", emptySet())!!.toSet()
+        val prefs = getSharedPreferences("nolauncher", MODE_PRIVATE)
+        hidden = prefs.getStringSet("hidden", emptySet())!!.toSet()
+        spacing = prefs.getInt("spacing", 10)
+        showIcons = prefs.getBoolean("icons", true)
         setContent {
             val coroutineScope = rememberCoroutineScope()
             val lazyListState = rememberLazyListState()
@@ -78,6 +82,8 @@ class NoLauncher : ComponentActivity() {
                         ) { app ->
                             app.Display(
                                 checked = if (editing) app.key !in hidden else null,
+                                spacing = spacing,
+                                showIcon = showIcons,
                                 onClick = {
                                     if (editing) {
                                         setHidden(app.key, app.key !in hidden)
@@ -98,21 +104,31 @@ class NoLauncher : ComponentActivity() {
                         }
                         if (apps.isNotEmpty() && !editing) {
                             item {
-                                Text(
-                                    text = "Show/Hide apps",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable(
-                                            interactionSource = remember { MutableInteractionSource() },
-                                            indication = null
-                                        ) {
-                                            editing = true
-                                            updateList()
-                                        }
-                                        .padding(16.dp)
-                                )
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        text = "Show/Hide apps",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                editing = true
+                                                updateList()
+                                            }
+                                            .padding(16.dp)
+                                    )
+                                    Text(
+                                        text = "Settings",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        textAlign = TextAlign.Center,
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clickable {
+                                                settingsOpen = true
+                                            }
+                                            .padding(16.dp)
+                                    )
+                                }
                             }
                         }
                     }
@@ -124,6 +140,44 @@ class NoLauncher : ComponentActivity() {
                         ) {
                             CircularProgressIndicator()
                         }
+                    }
+                    if (settingsOpen) {
+                        AlertDialog(
+                            onDismissRequest = { settingsOpen = false },
+                            confirmButton = {
+                                TextButton(onClick = { settingsOpen = false }) {
+                                    Text("OK")
+                                }
+                            },
+                            title = { Text("Settings") },
+                            text = {
+                                Column {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Spacing", modifier = Modifier.weight(1f))
+                                        TextButton(onClick = { setSpacing(spacing - 2) }) {
+                                            Text("−")
+                                        }
+                                        Text("$spacing")
+                                        TextButton(onClick = { setSpacing(spacing + 2) }) {
+                                            Text("+")
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Show icons", modifier = Modifier.weight(1f))
+                                        Switch(
+                                            checked = showIcons,
+                                            onCheckedChange = { setShowIcons(it) }
+                                        )
+                                    }
+                                }
+                            }
+                        )
                     }
                 }
             }
@@ -176,6 +230,18 @@ class NoLauncher : ComponentActivity() {
         getSharedPreferences("nolauncher", MODE_PRIVATE)
             .edit().putStringSet("hidden", HashSet(hidden)).apply()
         updateList()
+    }
+
+    private fun setSpacing(value: Int) {
+        spacing = value.coerceIn(0, 24)
+        getSharedPreferences("nolauncher", MODE_PRIVATE)
+            .edit().putInt("spacing", spacing).apply()
+    }
+
+    private fun setShowIcons(value: Boolean) {
+        showIcons = value
+        getSharedPreferences("nolauncher", MODE_PRIVATE)
+            .edit().putBoolean("icons", value).apply()
     }
 
     private fun updateList() {
