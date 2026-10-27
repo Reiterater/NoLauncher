@@ -11,6 +11,7 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.provider.Settings
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.clickable
@@ -19,28 +20,17 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material3.*
-import androidx.compose.material3.TextFieldDefaults.textFieldColors
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusManager
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import android.provider.Settings
 
 class NoLauncher : ComponentActivity() {
     companion object {
@@ -49,14 +39,12 @@ class NoLauncher : ComponentActivity() {
         var icons = HashMap<String, ImageBitmap>()
     }
 
-    private var queried by mutableStateOf(listOf<AppItem>())
-    private var query by mutableStateOf("")
+    private var shown by mutableStateOf(listOf<AppItem>())
     private var loading by mutableStateOf(false)
     private var scrolling by mutableStateOf(false)
     private var editing by mutableStateOf(false)
     private var hidden by mutableStateOf(setOf<String>())
     private lateinit var appChangeReceiver: AppChangeReceiver
-    private lateinit var focusManager: FocusManager
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -64,7 +52,6 @@ class NoLauncher : ComponentActivity() {
         hidden = getSharedPreferences("nolauncher", MODE_PRIVATE)
             .getStringSet("hidden", emptySet())!!.toSet()
         setContent {
-            focusManager = LocalFocusManager.current
             val coroutineScope = rememberCoroutineScope()
             val lazyListState = rememberLazyListState()
             if (scrolling) {
@@ -78,90 +65,54 @@ class NoLauncher : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    Column(modifier = Modifier.fillMaxSize()) {
-                        TextField(
-                            value = query,
-                            onValueChange = {
-                                query = it.replace("\n", "")
-                                query()
-                            },
-                            placeholder = {
-                                Text(text = stringResource(id = R.string.search_by_name))
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            trailingIcon = {
-                                if (query.isNotEmpty()) {
-                                    IconButton(onClick = {
-                                        query = ""
-                                        query()
-                                    }) {
-                                        Icon(imageVector = Icons.Default.Clear, contentDescription = null)
-                                    }
-                                }
-                            },
-                            singleLine = true,
-                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Go),
-                            keyboardActions = KeyboardActions(onGo = {
-                                if (!editing) {
-                                    queried.firstOrNull()?.let { launchApp(it) }
-                                }
-                            }),
-                            colors = textFieldColors(
-                                containerColor = Color.Transparent,
-                                focusedIndicatorColor = Color.Transparent,
-                                unfocusedIndicatorColor = Color.Transparent,
-                                disabledIndicatorColor = Color.Transparent,
-                                errorIndicatorColor = Color.Transparent
-                            )
-                        )
-                        LazyColumn(
-                            state = lazyListState,
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            items(
-                                items = queried,
-                                key = {
-                                    it.key
-                                }
-                            ) { app ->
-                                app.Display(
-                                    checked = if (editing) app.key !in hidden else null,
-                                    onClick = {
-                                        if (editing) {
-                                            setHidden(app.key, app.key !in hidden)
-                                        } else {
-                                            launchApp(app)
-                                        }
-                                    },
-                                    onLongClick = {
-                                        try {
-                                            startActivity(
-                                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.packageName}"))
-                                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            )
-                                        } catch (ignored: Exception) {
-                                        }
-                                    }
-                                )
+                    LazyColumn(
+                        state = lazyListState,
+                        contentPadding = PaddingValues(top = 8.dp),
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        items(
+                            items = shown,
+                            key = {
+                                it.key
                             }
-                            if (apps.isNotEmpty() && query.isEmpty()) {
-                                item {
-                                    Text(
-                                        text = if (editing) "Done" else "Show/Hide apps",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable(
-                                                interactionSource = remember { MutableInteractionSource() },
-                                                indication = null
-                                            ) {
-                                                editing = !editing
-                                                query()
-                                            }
-                                            .padding(16.dp)
-                                    )
+                        ) { app ->
+                            app.Display(
+                                checked = if (editing) app.key !in hidden else null,
+                                onClick = {
+                                    if (editing) {
+                                        setHidden(app.key, app.key !in hidden)
+                                    } else {
+                                        launchApp(app)
+                                    }
+                                },
+                                onLongClick = {
+                                    try {
+                                        startActivity(
+                                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.packageName}"))
+                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                        )
+                                    } catch (ignored: Exception) {
+                                    }
                                 }
+                            )
+                        }
+                        if (apps.isNotEmpty() && !editing) {
+                            item {
+                                Text(
+                                    text = "Show/Hide apps",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    textAlign = TextAlign.Center,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable(
+                                            interactionSource = remember { MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            editing = true
+                                            updateList()
+                                        }
+                                        .padding(16.dp)
+                                )
                             }
                         }
                     }
@@ -203,12 +154,11 @@ class NoLauncher : ComponentActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        query = ""
         editing = false
-        query()
-        focusManager.clearFocus()
+        updateList()
         scrolling = true
     }
+
     private fun launchApp(app: AppItem) {
         try {
             startActivity(
@@ -225,7 +175,11 @@ class NoLauncher : ComponentActivity() {
         hidden = if (hide) hidden + key else hidden - key
         getSharedPreferences("nolauncher", MODE_PRIVATE)
             .edit().putStringSet("hidden", HashSet(hidden)).apply()
-        query()
+        updateList()
+    }
+
+    private fun updateList() {
+        shown = if (editing) apps else apps.filter { it.key !in hidden }
     }
 
     fun load() {
@@ -244,7 +198,7 @@ class NoLauncher : ComponentActivity() {
                 val resultHashCount = result.sumOf { it.cn().flattenToString().hashCode() } +
                         own.flattenToString().hashCode()
 
-                if (appHashCount != resultHashCount || apps.isEmpty() || (query.trim().isEmpty() && queried.isEmpty())) {
+                if (appHashCount != resultHashCount || apps.isEmpty() || shown.isEmpty()) {
                     val temp = arrayListOf<AppItem>()
                     result.forEach { ri ->
                         val cn = ri.cn()
@@ -263,23 +217,11 @@ class NoLauncher : ComponentActivity() {
                     }
                     temp.sort()
                     apps = temp.toList()
-                    query()
+                    updateList()
                 }
             } catch (ignored: Exception) {
             }
             loading = false
-        }
-    }
-
-    private fun query() {
-        CoroutineScope(Dispatchers.IO).launch {
-            val matchQuery = query.trim()
-            val source = if (editing) apps else apps.filter { it.key !in hidden }
-            queried = if (matchQuery.isEmpty()) {
-                source
-            } else {
-                source.filter { it.name.contains(matchQuery, true) }
-            }
         }
     }
 
