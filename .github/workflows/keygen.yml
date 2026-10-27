@@ -1,0 +1,31 @@
+name: Generate keystore
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/keygen.yml'
+permissions:
+  contents: write
+jobs:
+  keygen:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Generate and encrypt keystore
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          test -n "$KEYSTORE_PASSWORD"
+          test ! -f release.keystore.enc
+          keytool -genkeypair -keystore release.keystore -storepass "$KEYSTORE_PASSWORD" -keypass "$KEYSTORE_PASSWORD" -alias nolauncher -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=NoLauncher"
+          openssl enc -aes-256-cbc -pbkdf2 -iter 100000 -salt -in release.keystore -out release.keystore.enc -pass env:KEYSTORE_PASSWORD
+          rm release.keystore
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add release.keystore.enc
+          git commit -m "Add encrypted keystore"
+          git push
