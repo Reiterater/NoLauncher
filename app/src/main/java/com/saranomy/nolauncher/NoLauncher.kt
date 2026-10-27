@@ -40,6 +40,7 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import android.provider.Settings
 
 class NoLauncher : ComponentActivity() {
     companion object {
@@ -134,7 +135,10 @@ class NoLauncher : ComponentActivity() {
                                     },
                                     onLongClick = {
                                         try {
-                                            startActivity(Intent(Intent.ACTION_DELETE, Uri.parse("package:${app.packageName}")))
+                                            startActivity(
+                                                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.packageName}"))
+                                                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                            )
                                         } catch (ignored: Exception) {
                                         }
                                     }
