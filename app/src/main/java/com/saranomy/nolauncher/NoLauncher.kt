@@ -46,6 +46,7 @@ class NoLauncher : ComponentActivity() {
     private var spacing by mutableStateOf(10)
     private var showIcons by mutableStateOf(true)
     private var settingsOpen by mutableStateOf(false)
+    private var menuApp by mutableStateOf<AppItem?>(null)
     private lateinit var appChangeReceiver: AppChangeReceiver
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -92,13 +93,7 @@ class NoLauncher : ComponentActivity() {
                                     }
                                 },
                                 onLongClick = {
-                                    try {
-                                        startActivity(
-                                            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.packageName}"))
-                                                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                                        )
-                                    } catch (ignored: Exception) {
-                                    }
+                                    menuApp = app
                                 }
                             )
                         }
@@ -179,6 +174,37 @@ class NoLauncher : ComponentActivity() {
                             }
                         )
                     }
+                    menuApp?.let { app ->
+                        AlertDialog(
+                            onDismissRequest = { menuApp = null },
+                            confirmButton = {},
+                            title = { Text(app.name) },
+                            text = {
+                                Column {
+                                    Text(
+                                        text = "App info",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                menuApp = null
+                                                openAppInfo(app)
+                                            }
+                                            .padding(vertical = 14.dp)
+                                    )
+                                    Text(
+                                        text = "Compress",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                menuApp = null
+                                                openZipScreen()
+                                            }
+                                            .padding(vertical = 14.dp)
+                                    )
+                                }
+                            }
+                        )
+                    }
                 }
             }
         }
@@ -220,6 +246,32 @@ class NoLauncher : ComponentActivity() {
                     .addCategory(Intent.CATEGORY_LAUNCHER)
                     .setComponent(app.component)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+            )
+        } catch (ignored: Exception) {
+        }
+    }
+
+    private fun openAppInfo(app: AppItem) {
+        try {
+            startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${app.packageName}"))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+        } catch (ignored: Exception) {
+        }
+    }
+
+    private fun openZipScreen() {
+        try {
+            startActivity(
+                Intent()
+                    .setComponent(
+                        ComponentName(
+                            "com.samsung.memorysaver",
+                            "com.samsung.memorysaver.zipunzipapps.ui.activities.ZipUnzipActivity"
+                        )
+                    )
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         } catch (ignored: Exception) {
         }
