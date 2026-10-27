@@ -232,7 +232,7 @@ class NoLauncher : ComponentActivity() {
         updateList()
     }
 
-    private fun setSpacing(value: Int) {
+    private fun changeSpacing(value: Int) {
         spacing = value.coerceIn(0, 24)
         getSharedPreferences("nolauncher", MODE_PRIVATE)
             .edit().putInt("spacing", spacing).apply()
