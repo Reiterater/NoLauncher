@@ -157,7 +157,7 @@ class NoLauncher : ComponentActivity() {
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text("Spacing", modifier = Modifier.weight(1f))
-                                        TextButton(onClick = { setSpacing(spacing - 2) }) {
+                                        TextButton(onClick = { changeSpacing(spacing - 2) }) {
                                             Text("−")
                                         }
                                         Text("$spacing")
