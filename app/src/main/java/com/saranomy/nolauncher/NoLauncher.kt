@@ -161,7 +161,7 @@ class NoLauncher : ComponentActivity() {
                                             Text("−")
                                         }
                                         Text("$spacing")
-                                        TextButton(onClick = { setSpacing(spacing + 2) }) {
+                                        TextButton(onClick = { changeSpacing(spacing + 2) }) {
                                             Text("+")
                                         }
                                     }
