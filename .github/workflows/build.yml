@@ -12,7 +12,16 @@ jobs:
           distribution: temurin
           java-version: 17
       - run: chmod +x gradlew
+      - name: Decrypt keystore
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+        run: |
+          if [ -f release.keystore.enc ]; then
+            openssl enc -d -aes-256-cbc -pbkdf2 -iter 100000 -in release.keystore.enc -out release.keystore -pass env:KEYSTORE_PASSWORD
+          fi
       - run: ./gradlew assembleRelease
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
       - uses: actions/upload-artifact@v4
         with:
           name: app-release
