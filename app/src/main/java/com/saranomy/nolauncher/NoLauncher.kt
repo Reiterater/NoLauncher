@@ -238,7 +238,7 @@ class NoLauncher : ComponentActivity() {
             .edit().putInt("spacing", spacing).apply()
     }
 
-    private fun setShowIcons(value: Boolean) { замени на private fun changeShowIcons(value: Boolean) {
+    private fun changeShowIcons(value: Boolean) {
         showIcons = value
         getSharedPreferences("nolauncher", MODE_PRIVATE)
             .edit().putBoolean("icons", value).apply()
