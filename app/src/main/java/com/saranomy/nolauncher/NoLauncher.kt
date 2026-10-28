@@ -175,6 +175,7 @@ class NoLauncher : ComponentActivity() {
                         )
                     }
                     menuApp?.let { app ->
+                        val isHidden = app.key in hidden
                         AlertDialog(
                             onDismissRequest = { menuApp = null },
                             confirmButton = {},
@@ -198,6 +199,16 @@ class NoLauncher : ComponentActivity() {
                                             .clickable {
                                                 menuApp = null
                                                 openZipScreen()
+                                            }
+                                            .padding(vertical = 14.dp)
+                                    )
+                                    Text(
+                                        text = if (isHidden) "Show" else "Hide",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                menuApp = null
+                                                setHidden(app.key, !isHidden)
                                             }
                                             .padding(vertical = 14.dp)
                                     )
