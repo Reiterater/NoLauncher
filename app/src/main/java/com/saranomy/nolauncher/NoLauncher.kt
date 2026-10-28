@@ -23,10 +23,15 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.view.WindowCompat
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -43,10 +48,13 @@ class NoLauncher : ComponentActivity() {
     private var scrolling by mutableStateOf(false)
     private var editing by mutableStateOf(false)
     private var hidden by mutableStateOf(setOf<String>())
+    private var names by mutableStateOf(mapOf<String, String>())
     private var spacing by mutableStateOf(10)
     private var showIcons by mutableStateOf(true)
     private var settingsOpen by mutableStateOf(false)
     private var menuApp by mutableStateOf<AppItem?>(null)
+    private var renameApp by mutableStateOf<AppItem?>(null)
+    private var renameText by mutableStateOf("")
     private lateinit var appChangeReceiver: AppChangeReceiver
 
     @OptIn(ExperimentalMaterial3Api::class)
@@ -56,6 +64,9 @@ class NoLauncher : ComponentActivity() {
         hidden = prefs.getStringSet("hidden", emptySet())!!.toSet()
         spacing = prefs.getInt("spacing", 10)
         showIcons = prefs.getBoolean("icons", true)
+        names = getSharedPreferences("nolauncher_names", MODE_PRIVATE).all
+            .mapNotNull { (k, v) -> (v as? String)?.let { k to it } }
+            .toMap()
         setContent {
             val coroutineScope = rememberCoroutineScope()
             val lazyListState = rememberLazyListState()
@@ -66,6 +77,12 @@ class NoLauncher : ComponentActivity() {
                 scrolling = false
             }
             NoLauncherTheme {
+                val barColor = MaterialTheme.colorScheme.background
+                SideEffect {
+                    window.navigationBarColor = barColor.toArgb()
+                    WindowCompat.getInsetsController(window, window.decorView)
+                        .isAppearanceLightNavigationBars = barColor.luminance() > 0.5f
+                }
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
@@ -203,6 +220,17 @@ class NoLauncher : ComponentActivity() {
                                             .padding(vertical = 14.dp)
                                     )
                                     Text(
+                                        text = "Rename",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                menuApp = null
+                                                renameText = app.name
+                                                renameApp = app
+                                            }
+                                            .padding(vertical = 14.dp)
+                                    )
+                                    Text(
                                         text = if (isHidden) "Show" else "Hide",
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -212,6 +240,42 @@ class NoLauncher : ComponentActivity() {
                                             }
                                             .padding(vertical = 14.dp)
                                     )
+                                }
+                            }
+                        )
+                    }
+                    renameApp?.let { app ->
+                        val original = apps.firstOrNull { it.key == app.key }?.name ?: app.name
+                        AlertDialog(
+                            onDismissRequest = { renameApp = null },
+                            title = { Text("Rename") },
+                            text = {
+                                val focusRequester = remember { FocusRequester() }
+                                LaunchedEffect(Unit) {
+                                    try {
+                                        focusRequester.requestFocus()
+                                    } catch (ignored: Exception) {
+                                    }
+                                }
+                                TextField(
+                                    value = renameText,
+                                    onValueChange = { renameText = it.replace("\n", "") },
+                                    placeholder = { Text(original) },
+                                    singleLine = true,
+                                    modifier = Modifier.focusRequester(focusRequester)
+                                )
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    setName(app.key, renameText)
+                                    renameApp = null
+                                }) {
+                                    Text("OK")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { renameApp = null }) {
+                                    Text("Cancel")
                                 }
                             }
                         )
@@ -295,6 +359,20 @@ class NoLauncher : ComponentActivity() {
         updateList()
     }
 
+    private fun setName(key: String, name: String) {
+        val value = name.trim()
+        val editor = getSharedPreferences("nolauncher_names", MODE_PRIVATE).edit()
+        if (value.isEmpty()) {
+            names = names - key
+            editor.remove(key)
+        } else {
+            names = names + (key to value)
+            editor.putString(key, value)
+        }
+        editor.apply()
+        updateList()
+    }
+
     private fun changeSpacing(value: Int) {
         spacing = value.coerceIn(0, 24)
         getSharedPreferences("nolauncher", MODE_PRIVATE)
@@ -308,7 +386,8 @@ class NoLauncher : ComponentActivity() {
     }
 
     private fun updateList() {
-        shown = if (editing) apps else apps.filter { it.key !in hidden }
+        val base = if (editing) apps else apps.filter { it.key !in hidden }
+        shown = base.map { it.copy(name = names[it.key] ?: it.name) }.sorted()
     }
 
     fun load() {
