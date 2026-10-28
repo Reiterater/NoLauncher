@@ -3,8 +3,10 @@ package com.saranomy.nolauncher
 import android.content.ComponentName
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.pm.LauncherApps
 import android.content.pm.PackageManager
 import android.content.pm.ResolveInfo
+import android.content.pm.ShortcutInfo
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.drawable.Drawable
@@ -51,8 +53,10 @@ class NoLauncher : ComponentActivity() {
     private var names by mutableStateOf(mapOf<String, String>())
     private var spacing by mutableStateOf(10)
     private var showIcons by mutableStateOf(true)
+    private var tapMenu by mutableStateOf(false)
     private var settingsOpen by mutableStateOf(false)
     private var menuApp by mutableStateOf<AppItem?>(null)
+    private var menuShortcuts by mutableStateOf(listOf<ShortcutInfo>())
     private var renameApp by mutableStateOf<AppItem?>(null)
     private var renameText by mutableStateOf("")
     private lateinit var appChangeReceiver: AppChangeReceiver
@@ -64,6 +68,7 @@ class NoLauncher : ComponentActivity() {
         hidden = prefs.getStringSet("hidden", emptySet())!!.toSet()
         spacing = prefs.getInt("spacing", 10)
         showIcons = prefs.getBoolean("icons", true)
+        tapMenu = prefs.getBoolean("tapmenu", false)
         names = getSharedPreferences("nolauncher_names", MODE_PRIVATE).all
             .mapNotNull { (k, v) -> (v as? String)?.let { k to it } }
             .toMap()
@@ -98,6 +103,11 @@ class NoLauncher : ComponentActivity() {
                                 it.key
                             }
                         ) { app ->
+                            val launch: () -> Unit = { launchApp(app) }
+                            val openMenu: () -> Unit = {
+                                menuShortcuts = loadShortcuts(app)
+                                menuApp = app
+                            }
                             app.Display(
                                 checked = if (editing) app.key !in hidden else null,
                                 spacing = spacing,
@@ -105,13 +115,12 @@ class NoLauncher : ComponentActivity() {
                                 onClick = {
                                     if (editing) {
                                         setHidden(app.key, app.key !in hidden)
-                                    } else {
-                                        launchApp(app)
+                                    } else if (tapMenu) {
+                                        openMenu()
                                     }
                                 },
-                                onLongClick = {
-                                    menuApp = app
-                                }
+                                onDoubleClick = if (editing || tapMenu) null else launch,
+                                onLongClick = openMenu
                             )
                         }
                         if (apps.isNotEmpty() && !editing) {
@@ -187,6 +196,20 @@ class NoLauncher : ComponentActivity() {
                                             onCheckedChange = { changeShowIcons(it) }
                                         )
                                     }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Tap opens menu", modifier = Modifier.weight(1f))
+                                        Switch(
+                                            checked = tapMenu,
+                                            onCheckedChange = { changeTapMenu(it) }
+                                        )
+                                    }
+                                    Text(
+                                        text = "Off: double tap launches an app. On: tap opens the menu, launch from there.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
                                 }
                             }
                         )
@@ -199,6 +222,33 @@ class NoLauncher : ComponentActivity() {
                             title = { Text(app.name) },
                             text = {
                                 Column {
+                                    if (tapMenu) {
+                                        Text(
+                                            text = "Open",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    menuApp = null
+                                                    launchApp(app)
+                                                }
+                                                .padding(vertical = 14.dp)
+                                        )
+                                    }
+                                    menuShortcuts.forEach { sc ->
+                                        Text(
+                                            text = sc.shortLabel?.toString() ?: sc.id,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    menuApp = null
+                                                    launchShortcut(sc)
+                                                }
+                                                .padding(vertical = 14.dp)
+                                        )
+                                    }
+                                    if (menuShortcuts.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                    }
                                     Text(
                                         text = "App info",
                                         modifier = Modifier
@@ -352,6 +402,38 @@ class NoLauncher : ComponentActivity() {
         }
     }
 
+    private fun loadShortcuts(app: AppItem): List<ShortcutInfo> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+            try {
+                val launcherApps = getSystemService(LauncherApps::class.java)
+                val query = LauncherApps.ShortcutQuery()
+                    .setPackage(app.packageName)
+                    .setActivity(app.component)
+                    .setQueryFlags(
+                        LauncherApps.ShortcutQuery.FLAG_MATCH_DYNAMIC or
+                                LauncherApps.ShortcutQuery.FLAG_MATCH_MANIFEST
+                    )
+                launcherApps.getShortcuts(query, android.os.Process.myUserHandle())
+                    ?.filter { it.isEnabled }
+                    ?.take(4)
+                    ?: emptyList()
+            } catch (e: Exception) {
+                emptyList()
+            }
+        } else {
+            emptyList()
+        }
+    }
+
+    private fun launchShortcut(shortcut: ShortcutInfo) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+            try {
+                getSystemService(LauncherApps::class.java).startShortcut(shortcut, null, null)
+            } catch (ignored: Exception) {
+            }
+        }
+    }
+
     private fun setHidden(key: String, hide: Boolean) {
         hidden = if (hide) hidden + key else hidden - key
         getSharedPreferences("nolauncher", MODE_PRIVATE)
@@ -383,6 +465,12 @@ class NoLauncher : ComponentActivity() {
         showIcons = value
         getSharedPreferences("nolauncher", MODE_PRIVATE)
             .edit().putBoolean("icons", value).apply()
+    }
+
+    private fun changeTapMenu(value: Boolean) {
+        tapMenu = value
+        getSharedPreferences("nolauncher", MODE_PRIVATE)
+            .edit().putBoolean("tapmenu", value).apply()
     }
 
     private fun updateList() {

@@ -34,14 +34,16 @@ data class AppItem(
         spacing: Int,
         showIcon: Boolean,
         onClick: () -> Unit,
-        onLongClick: () -> Unit
+        onLongClick: () -> Unit,
+        onDoubleClick: (() -> Unit)? = null
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .combinedClickable(
                     onClick = onClick,
-                    onLongClick = onLongClick
+                    onLongClick = onLongClick,
+                    onDoubleClick = onDoubleClick
                 )
                 .padding(horizontal = 16.dp, vertical = spacing.dp),
             verticalAlignment = Alignment.CenterVertically
