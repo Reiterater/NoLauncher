@@ -13,6 +13,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 
@@ -33,6 +34,7 @@ data class AppItem(
         checked: Boolean?,
         spacing: Int,
         showIcon: Boolean,
+        rightAlign: Boolean,
         onClick: () -> Unit,
         onLongClick: () -> Unit,
         onDoubleClick: (() -> Unit)? = null
@@ -48,25 +50,49 @@ data class AppItem(
                 .padding(horizontal = 16.dp, vertical = spacing.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (showIcon) {
-                NoLauncher.icons[key]?.let {
-                    Image(
-                        bitmap = it,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp)
-                    )
+            if (rightAlign) {
+                if (checked != null) {
+                    Checkbox(checked = checked, onCheckedChange = null)
                 }
-            }
-            Text(
-                text = name,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(start = if (showIcon) 12.dp else 0.dp, end = 12.dp)
-            )
-            if (checked != null) {
-                Checkbox(checked = checked, onCheckedChange = null)
+                Text(
+                    text = name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.End,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = 12.dp, end = if (showIcon) 12.dp else 0.dp)
+                )
+                if (showIcon) {
+                    NoLauncher.icons[key]?.let {
+                        Image(
+                            bitmap = it,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+            } else {
+                if (showIcon) {
+                    NoLauncher.icons[key]?.let {
+                        Image(
+                            bitmap = it,
+                            contentDescription = null,
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                }
+                Text(
+                    text = name,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(start = if (showIcon) 12.dp else 0.dp, end = 12.dp)
+                )
+                if (checked != null) {
+                    Checkbox(checked = checked, onCheckedChange = null)
+                }
             }
         }
     }
