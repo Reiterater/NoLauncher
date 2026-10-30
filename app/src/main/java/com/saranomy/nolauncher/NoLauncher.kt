@@ -38,7 +38,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
-class NoLauncher : ComponentActivity() {
+open class NoLauncher : ComponentActivity() {
     companion object {
         var self: NoLauncher? = null
         var apps by mutableStateOf(listOf<AppItem>())
@@ -60,6 +60,9 @@ class NoLauncher : ComponentActivity() {
     private var renameApp by mutableStateOf<AppItem?>(null)
     private var renameText by mutableStateOf("")
     private lateinit var appChangeReceiver: AppChangeReceiver
+
+    protected open val assistMode: Boolean
+        get() = false
 
     @OptIn(ExperimentalMaterial3Api::class)
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -355,10 +358,15 @@ class NoLauncher : ComponentActivity() {
             e.printStackTrace()
         }
         self = null
+        if (assistMode) finish()
     }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
+        if (assistMode && !editing) {
+            finish()
+            return
+        }
         editing = false
         updateList()
         scrolling = true
@@ -372,6 +380,7 @@ class NoLauncher : ComponentActivity() {
                     .setComponent(app.component)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             )
+            if (assistMode) finish()
         } catch (ignored: Exception) {
         }
     }
