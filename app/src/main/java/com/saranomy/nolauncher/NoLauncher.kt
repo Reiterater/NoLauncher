@@ -14,13 +14,18 @@ import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -38,6 +43,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
+data class CustomEntry(
+    val name: String,
+    val pkg: String,
+    val cls: String,
+    val inList: Boolean,
+    val inMenu: Boolean
+)
+
 open class NoLauncher : ComponentActivity() {
     companion object {
         var self: NoLauncher? = null
@@ -51,12 +64,21 @@ open class NoLauncher : ComponentActivity() {
     private var editing by mutableStateOf(false)
     private var hidden by mutableStateOf(setOf<String>())
     private var names by mutableStateOf(mapOf<String, String>())
+    private var customs by mutableStateOf(listOf<CustomEntry>())
     private var spacing by mutableStateOf(10)
     private var showIcons by mutableStateOf(true)
     private var tapMenu by mutableStateOf(false)
+    private var rightLayout by mutableStateOf(true)
     private var settingsOpen by mutableStateOf(false)
+    private var customOpen by mutableStateOf(false)
+    private var customAddOpen by mutableStateOf(false)
+    private var addName by mutableStateOf("")
+    private var addComponent by mutableStateOf("")
+    private var addInList by mutableStateOf(true)
+    private var addInMenu by mutableStateOf(false)
     private var menuApp by mutableStateOf<AppItem?>(null)
     private var menuShortcuts by mutableStateOf(listOf<ShortcutInfo>())
+    private var menuShortcutIcons by mutableStateOf(mapOf<String, ImageBitmap>())
     private var renameApp by mutableStateOf<AppItem?>(null)
     private var renameText by mutableStateOf("")
     private lateinit var appChangeReceiver: AppChangeReceiver
@@ -72,6 +94,8 @@ open class NoLauncher : ComponentActivity() {
         spacing = prefs.getInt("spacing", 10)
         showIcons = prefs.getBoolean("icons", true)
         tapMenu = prefs.getBoolean("tapmenu", false)
+        rightLayout = prefs.getBoolean("right", true)
+        customs = parseCustoms(prefs.getString("custom", null))
         names = getSharedPreferences("nolauncher_names", MODE_PRIVATE).all
             .mapNotNull { (k, v) -> (v as? String)?.let { k to it } }
             .toMap()
@@ -97,24 +121,62 @@ open class NoLauncher : ComponentActivity() {
                 ) {
                     LazyColumn(
                         state = lazyListState,
-                        contentPadding = PaddingValues(top = 8.dp),
+                        reverseLayout = rightLayout,
+                        contentPadding = PaddingValues(vertical = 8.dp),
                         modifier = Modifier.fillMaxSize()
                     ) {
+                        val footer: LazyListScope.() -> Unit = {
+                            if (apps.isNotEmpty() && !editing) {
+                                item {
+                                    Row(modifier = Modifier.fillMaxWidth()) {
+                                        Text(
+                                            text = "Show/Hide apps",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable {
+                                                    editing = true
+                                                    updateList()
+                                                }
+                                                .padding(16.dp)
+                                        )
+                                        Text(
+                                            text = "Settings",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            textAlign = TextAlign.Center,
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .clickable {
+                                                    settingsOpen = true
+                                                }
+                                                .padding(16.dp)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        if (rightLayout) {
+                            footer()
+                        }
                         items(
-                            items = shown,
+                            items = if (rightLayout) shown.reversed() else shown,
                             key = {
                                 it.key
                             }
                         ) { app ->
-                            val launch: () -> Unit = { launchApp(app) }
+                            val onLaunch: () -> Unit = { launchApp(app) }
+                            val onZip: () -> Unit = { openZipScreen() }
                             val openMenu: () -> Unit = {
                                 menuShortcuts = loadShortcuts(app)
+                                menuShortcutIcons = loadShortcutIcons(menuShortcuts)
                                 menuApp = app
                             }
                             app.Display(
                                 checked = if (editing) app.key !in hidden else null,
                                 spacing = spacing,
                                 showIcon = showIcons,
+                                rightAlign = rightLayout,
                                 onClick = {
                                     if (editing) {
                                         setHidden(app.key, app.key !in hidden)
@@ -122,38 +184,12 @@ open class NoLauncher : ComponentActivity() {
                                         openMenu()
                                     }
                                 },
-                                onDoubleClick = if (editing || tapMenu) null else launch,
-                                onLongClick = openMenu
+                                onDoubleClick = if (editing || tapMenu) null else onLaunch,
+                                onLongClick = if (tapMenu) onZip else openMenu
                             )
                         }
-                        if (apps.isNotEmpty() && !editing) {
-                            item {
-                                Row(modifier = Modifier.fillMaxWidth()) {
-                                    Text(
-                                        text = "Show/Hide apps",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable {
-                                                editing = true
-                                                updateList()
-                                            }
-                                            .padding(16.dp)
-                                    )
-                                    Text(
-                                        text = "Settings",
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        textAlign = TextAlign.Center,
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clickable {
-                                                settingsOpen = true
-                                            }
-                                            .padding(16.dp)
-                                    )
-                                }
-                            }
+                        if (!rightLayout) {
+                            footer()
                         }
                     }
                     if (loading) {
@@ -175,7 +211,7 @@ open class NoLauncher : ComponentActivity() {
                             },
                             title = { Text("Settings") },
                             text = {
-                                Column {
+                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
@@ -203,6 +239,16 @@ open class NoLauncher : ComponentActivity() {
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        Text("Bottom-right layout", modifier = Modifier.weight(1f))
+                                        Switch(
+                                            checked = rightLayout,
+                                            onCheckedChange = { changeRightLayout(it) }
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text("Tap opens menu", modifier = Modifier.weight(1f))
                                         Switch(
                                             checked = tapMenu,
@@ -210,9 +256,167 @@ open class NoLauncher : ComponentActivity() {
                                         )
                                     }
                                     Text(
-                                        text = "Off: double tap launches an app. On: tap opens the menu, launch from there.",
+                                        text = "Off: double tap launches, long press opens the menu. On: tap opens the menu, long press opens the compress screen.",
                                         style = MaterialTheme.typography.bodySmall
                                     )
+                                    Text(
+                                        text = "Custom activities",
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .clickable {
+                                                settingsOpen = false
+                                                customOpen = true
+                                            }
+                                            .padding(vertical = 14.dp)
+                                    )
+                                }
+                            }
+                        )
+                    }
+                    if (customOpen) {
+                        AlertDialog(
+                            onDismissRequest = { customOpen = false },
+                            title = { Text("Custom activities") },
+                            text = {
+                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                    if (customs.isEmpty()) {
+                                        Text(
+                                            text = "Nothing added yet.",
+                                            style = MaterialTheme.typography.bodySmall
+                                        )
+                                    }
+                                    customs.forEachIndexed { index, c ->
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Text(c.name, modifier = Modifier.weight(1f))
+                                            TextButton(onClick = {
+                                                saveCustoms(customs.filterIndexed { i, _ -> i != index })
+                                                load()
+                                            }) {
+                                                Text("✕")
+                                            }
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Checkbox(
+                                                checked = c.inList,
+                                                onCheckedChange = { value ->
+                                                    saveCustoms(customs.mapIndexed { i, e ->
+                                                        if (i == index) e.copy(inList = value) else e
+                                                    })
+                                                    load()
+                                                }
+                                            )
+                                            Text("List")
+                                            Spacer(modifier = Modifier.width(16.dp))
+                                            Checkbox(
+                                                checked = c.inMenu,
+                                                onCheckedChange = { value ->
+                                                    saveCustoms(customs.mapIndexed { i, e ->
+                                                        if (i == index) e.copy(inMenu = value) else e
+                                                    })
+                                                }
+                                            )
+                                            Text("Menu")
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(onClick = {
+                                    addName = ""
+                                    addComponent = ""
+                                    addInList = true
+                                    addInMenu = false
+                                    customAddOpen = true
+                                }) {
+                                    Text("Add")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { customOpen = false }) {
+                                    Text("Close")
+                                }
+                            }
+                        )
+                    }
+                    if (customAddOpen) {
+                        val parsed = parseComponent(addComponent)
+                        AlertDialog(
+                            onDismissRequest = { customAddOpen = false },
+                            title = { Text("Add activity") },
+                            text = {
+                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
+                                    TextField(
+                                        value = addName,
+                                        onValueChange = {
+                                            addName = it.replace("\n", "").replace("\t", " ")
+                                        },
+                                        placeholder = { Text("Name") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    TextField(
+                                        value = addComponent,
+                                        onValueChange = {
+                                            addComponent = it.replace("\n", "").replace("\t", "").replace(" ", "")
+                                        },
+                                        placeholder = { Text("package/activity class") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Show in list", modifier = Modifier.weight(1f))
+                                        Switch(
+                                            checked = addInList,
+                                            onCheckedChange = { addInList = it }
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Show in menu", modifier = Modifier.weight(1f))
+                                        Switch(
+                                            checked = addInMenu,
+                                            onCheckedChange = { addInMenu = it }
+                                        )
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                TextButton(
+                                    enabled = parsed != null && addName.isNotBlank() && (addInList || addInMenu),
+                                    onClick = {
+                                        if (parsed != null) {
+                                            saveCustoms(
+                                                customs + CustomEntry(
+                                                    addName.trim(),
+                                                    parsed.packageName,
+                                                    parsed.className,
+                                                    addInList,
+                                                    addInMenu
+                                                )
+                                            )
+                                            load()
+                                        }
+                                        customAddOpen = false
+                                    }
+                                ) {
+                                    Text("Add")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { customAddOpen = false }) {
+                                    Text("Cancel")
                                 }
                             }
                         )
@@ -224,7 +428,7 @@ open class NoLauncher : ComponentActivity() {
                             confirmButton = {},
                             title = { Text(app.name) },
                             text = {
-                                Column {
+                                Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                                     if (tapMenu) {
                                         Text(
                                             text = "Open",
@@ -238,16 +442,27 @@ open class NoLauncher : ComponentActivity() {
                                         )
                                     }
                                     menuShortcuts.forEach { sc ->
-                                        Text(
-                                            text = sc.shortLabel?.toString() ?: sc.id,
+                                        Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .clickable {
                                                     menuApp = null
                                                     launchShortcut(sc)
                                                 }
-                                                .padding(vertical = 14.dp)
-                                        )
+                                                .padding(vertical = 10.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            val shortcutIcon = menuShortcutIcons[sc.id]
+                                            if (shortcutIcon != null) {
+                                                Image(
+                                                    bitmap = shortcutIcon,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(28.dp)
+                                                )
+                                                Spacer(modifier = Modifier.width(12.dp))
+                                            }
+                                            Text(sc.shortLabel?.toString() ?: sc.id)
+                                        }
                                     }
                                     if (menuShortcuts.isNotEmpty()) {
                                         Spacer(modifier = Modifier.height(8.dp))
@@ -262,16 +477,18 @@ open class NoLauncher : ComponentActivity() {
                                             }
                                             .padding(vertical = 14.dp)
                                     )
-                                    Text(
-                                        text = "Compress",
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                menuApp = null
-                                                openZipScreen()
-                                            }
-                                            .padding(vertical = 14.dp)
-                                    )
+                                    if (!tapMenu) {
+                                        Text(
+                                            text = "Compress",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    menuApp = null
+                                                    openZipScreen()
+                                                }
+                                                .padding(vertical = 14.dp)
+                                        )
+                                    }
                                     Text(
                                         text = "Rename",
                                         modifier = Modifier
@@ -293,6 +510,22 @@ open class NoLauncher : ComponentActivity() {
                                             }
                                             .padding(vertical = 14.dp)
                                     )
+                                    val menuCustoms = customs.filter { it.inMenu }
+                                    if (menuCustoms.isNotEmpty()) {
+                                        Spacer(modifier = Modifier.height(8.dp))
+                                    }
+                                    menuCustoms.forEach { c ->
+                                        Text(
+                                            text = c.name,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    menuApp = null
+                                                    launchComponent(ComponentName(c.pkg, c.cls), c.name)
+                                                }
+                                                .padding(vertical = 14.dp)
+                                        )
+                                    }
                                 }
                             }
                         )
@@ -373,6 +606,13 @@ open class NoLauncher : ComponentActivity() {
     }
 
     private fun launchApp(app: AppItem) {
+        val isCustom = customs.any {
+            it.inList && it.pkg == app.component.packageName && it.cls == app.component.className
+        }
+        if (isCustom) {
+            launchComponent(app.component, app.name)
+            return
+        }
         try {
             startActivity(
                 Intent(Intent.ACTION_MAIN)
@@ -382,6 +622,19 @@ open class NoLauncher : ComponentActivity() {
             )
             if (assistMode) finish()
         } catch (ignored: Exception) {
+        }
+    }
+
+    private fun launchComponent(component: ComponentName, label: String) {
+        try {
+            startActivity(
+                Intent()
+                    .setComponent(component)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            )
+            if (assistMode) finish()
+        } catch (e: Exception) {
+            Toast.makeText(this, "Can't open $label", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -434,6 +687,29 @@ open class NoLauncher : ComponentActivity() {
         }
     }
 
+    private fun loadShortcutIcons(shortcuts: List<ShortcutInfo>): Map<String, ImageBitmap> {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+            val result = HashMap<String, ImageBitmap>()
+            try {
+                val launcherApps = getSystemService(LauncherApps::class.java)
+                val density = resources.displayMetrics.densityDpi
+                shortcuts.forEach { sc ->
+                    try {
+                        val drawable = launcherApps.getShortcutIconDrawable(sc, density)
+                        if (drawable != null) {
+                            result[sc.id] = drawableToBitmap(drawable, 96)
+                        }
+                    } catch (ignored: Exception) {
+                    }
+                }
+            } catch (ignored: Exception) {
+            }
+            result
+        } else {
+            emptyMap()
+        }
+    }
+
     private fun launchShortcut(shortcut: ShortcutInfo) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
             try {
@@ -464,6 +740,33 @@ open class NoLauncher : ComponentActivity() {
         updateList()
     }
 
+    private fun parseCustoms(raw: String?): List<CustomEntry> {
+        return raw.orEmpty().split("\n").mapNotNull { line ->
+            val f = line.split("\t")
+            if (f.size == 5) CustomEntry(f[0], f[1], f[2], f[3] == "1", f[4] == "1") else null
+        }
+    }
+
+    private fun saveCustoms(list: List<CustomEntry>) {
+        customs = list
+        val text = list.joinToString("\n") {
+            it.name + "\t" + it.pkg + "\t" + it.cls + "\t" +
+                    (if (it.inList) "1" else "0") + "\t" + (if (it.inMenu) "1" else "0")
+        }
+        getSharedPreferences("nolauncher", MODE_PRIVATE)
+            .edit().putString("custom", text).apply()
+    }
+
+    private fun parseComponent(text: String): ComponentName? {
+        val parts = text.trim().split("/")
+        if (parts.size != 2) return null
+        val pkg = parts[0].trim()
+        var cls = parts[1].trim()
+        if (pkg.isEmpty() || cls.isEmpty()) return null
+        if (cls.startsWith(".")) cls = pkg + cls
+        return ComponentName(pkg, cls)
+    }
+
     private fun changeSpacing(value: Int) {
         spacing = value.coerceIn(0, 24)
         getSharedPreferences("nolauncher", MODE_PRIVATE)
@@ -480,6 +783,12 @@ open class NoLauncher : ComponentActivity() {
         tapMenu = value
         getSharedPreferences("nolauncher", MODE_PRIVATE)
             .edit().putBoolean("tapmenu", value).apply()
+    }
+
+    private fun changeRightLayout(value: Boolean) {
+        rightLayout = value
+        getSharedPreferences("nolauncher", MODE_PRIVATE)
+            .edit().putBoolean("right", value).apply()
     }
 
     private fun updateList() {
@@ -499,9 +808,14 @@ open class NoLauncher : ComponentActivity() {
                 val own = ComponentName(this@NoLauncher, NoLauncher::class.java)
                 fun ResolveInfo.cn() = ComponentName(activityInfo.packageName, activityInfo.name)
 
-                val appHashCount = apps.sumOf { it.key.hashCode() }
-                val resultHashCount = result.sumOf { it.cn().flattenToString().hashCode() } +
-                        own.flattenToString().hashCode()
+                val customList = customs.filter { it.inList }
+                val expectedKeys = HashSet<String>()
+                result.forEach { expectedKeys.add(it.cn().flattenToString()) }
+                expectedKeys.add(own.flattenToString())
+                customList.forEach { expectedKeys.add(ComponentName(it.pkg, it.cls).flattenToString()) }
+
+                val appHashCount = apps.map { it.key }.toSet().sumOf { it.hashCode() }
+                val resultHashCount = expectedKeys.sumOf { it.hashCode() }
 
                 if (appHashCount != resultHashCount || apps.isEmpty() || shown.isEmpty()) {
                     val temp = arrayListOf<AppItem>()
@@ -520,6 +834,23 @@ open class NoLauncher : ComponentActivity() {
                             icon(item.key, applicationInfo.loadIcon(packageManager))
                         }
                     }
+                    customList.forEach { c ->
+                        val cn = ComponentName(c.pkg, c.cls)
+                        val item = AppItem(c.name, c.pkg, cn)
+                        if (temp.none { it.key == item.key }) {
+                            temp.add(item)
+                        }
+                        if (!icons.containsKey(item.key)) {
+                            try {
+                                icon(item.key, packageManager.getActivityIcon(cn))
+                            } catch (ignored: Exception) {
+                                try {
+                                    icon(item.key, packageManager.getApplicationIcon(c.pkg))
+                                } catch (ignored2: Exception) {
+                                }
+                            }
+                        }
+                    }
                     temp.sort()
                     apps = temp.toList()
                     updateList()
@@ -528,6 +859,14 @@ open class NoLauncher : ComponentActivity() {
             }
             loading = false
         }
+    }
+
+    private fun drawableToBitmap(drawable: Drawable, size: Int): ImageBitmap {
+        val bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        drawable.setBounds(0, 0, size, size)
+        drawable.draw(canvas)
+        return bitmap.asImageBitmap()
     }
 
     private fun icon(key: String, drawable: Drawable) {
