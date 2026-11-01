@@ -66,9 +66,11 @@ open class NoLauncher : ComponentActivity() {
     private var names by mutableStateOf(mapOf<String, String>())
     private var customs by mutableStateOf(listOf<CustomEntry>())
     private var spacing by mutableStateOf(10)
+    private var menuSpacing by mutableStateOf(14)
     private var showIcons by mutableStateOf(true)
     private var tapMenu by mutableStateOf(false)
     private var rightLayout by mutableStateOf(true)
+    private var pinBar by mutableStateOf(true)
     private var settingsOpen by mutableStateOf(false)
     private var customOpen by mutableStateOf(false)
     private var customAddOpen by mutableStateOf(false)
@@ -92,9 +94,11 @@ open class NoLauncher : ComponentActivity() {
         val prefs = getSharedPreferences("nolauncher", MODE_PRIVATE)
         hidden = prefs.getStringSet("hidden", emptySet())!!.toSet()
         spacing = prefs.getInt("spacing", 10)
+        menuSpacing = prefs.getInt("menuspacing", 14)
         showIcons = prefs.getBoolean("icons", true)
         tapMenu = prefs.getBoolean("tapmenu", false)
         rightLayout = prefs.getBoolean("right", true)
+        pinBar = prefs.getBoolean("pin", true)
         customs = parseCustoms(prefs.getString("custom", null))
         names = getSharedPreferences("nolauncher_names", MODE_PRIVATE).all
             .mapNotNull { (k, v) -> (v as? String)?.let { k to it } }
@@ -119,77 +123,57 @@ open class NoLauncher : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background
                 ) {
-                    LazyColumn(
-                        state = lazyListState,
-                        reverseLayout = rightLayout,
-                        contentPadding = PaddingValues(vertical = 8.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        val footer: LazyListScope.() -> Unit = {
-                            if (apps.isNotEmpty() && !editing) {
+                    Column(modifier = Modifier.fillMaxSize()) {
+                        if (pinBar) {
+                            TopBar()
+                        }
+                        LazyColumn(
+                            state = lazyListState,
+                            reverseLayout = rightLayout,
+                            contentPadding = PaddingValues(vertical = 8.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .weight(1f)
+                        ) {
+                            if (!pinBar && !rightLayout) {
                                 item {
-                                    Row(modifier = Modifier.fillMaxWidth()) {
-                                        Text(
-                                            text = "Show/Hide apps",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clickable {
-                                                    editing = true
-                                                    updateList()
-                                                }
-                                                .padding(16.dp)
-                                        )
-                                        Text(
-                                            text = "Settings",
-                                            style = MaterialTheme.typography.bodyMedium,
-                                            textAlign = TextAlign.Center,
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clickable {
-                                                    settingsOpen = true
-                                                }
-                                                .padding(16.dp)
-                                        )
-                                    }
+                                    TopBar()
                                 }
                             }
-                        }
-                        if (rightLayout) {
-                            footer()
-                        }
-                        items(
-                            items = if (rightLayout) shown.reversed() else shown,
-                            key = {
-                                it.key
+                            items(
+                                items = if (rightLayout) shown.reversed() else shown,
+                                key = {
+                                    it.key
+                                }
+                            ) { app ->
+                                val onLaunch: () -> Unit = { launchApp(app) }
+                                val onZip: () -> Unit = { openZipScreen() }
+                                val openMenu: () -> Unit = {
+                                    menuShortcuts = loadShortcuts(app)
+                                    menuShortcutIcons = loadShortcutIcons(menuShortcuts)
+                                    menuApp = app
+                                }
+                                app.Display(
+                                    checked = if (editing) app.key !in hidden else null,
+                                    spacing = spacing,
+                                    showIcon = showIcons,
+                                    rightAlign = rightLayout,
+                                    onClick = {
+                                        if (editing) {
+                                            setHidden(app.key, app.key !in hidden)
+                                        } else if (tapMenu) {
+                                            openMenu()
+                                        }
+                                    },
+                                    onDoubleClick = if (editing || tapMenu) null else onLaunch,
+                                    onLongClick = if (tapMenu) onZip else openMenu
+                                )
                             }
-                        ) { app ->
-                            val onLaunch: () -> Unit = { launchApp(app) }
-                            val onZip: () -> Unit = { openZipScreen() }
-                            val openMenu: () -> Unit = {
-                                menuShortcuts = loadShortcuts(app)
-                                menuShortcutIcons = loadShortcutIcons(menuShortcuts)
-                                menuApp = app
+                            if (!pinBar && rightLayout) {
+                                item {
+                                    TopBar()
+                                }
                             }
-                            app.Display(
-                                checked = if (editing) app.key !in hidden else null,
-                                spacing = spacing,
-                                showIcon = showIcons,
-                                rightAlign = rightLayout,
-                                onClick = {
-                                    if (editing) {
-                                        setHidden(app.key, app.key !in hidden)
-                                    } else if (tapMenu) {
-                                        openMenu()
-                                    }
-                                },
-                                onDoubleClick = if (editing || tapMenu) null else onLaunch,
-                                onLongClick = if (tapMenu) onZip else openMenu
-                            )
-                        }
-                        if (!rightLayout) {
-                            footer()
                         }
                     }
                     if (loading) {
@@ -229,10 +213,33 @@ open class NoLauncher : ComponentActivity() {
                                         modifier = Modifier.fillMaxWidth(),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
+                                        Text("Menu spacing", modifier = Modifier.weight(1f))
+                                        TextButton(onClick = { changeMenuSpacing(menuSpacing - 2) }) {
+                                            Text("−")
+                                        }
+                                        Text("$menuSpacing")
+                                        TextButton(onClick = { changeMenuSpacing(menuSpacing + 2) }) {
+                                            Text("+")
+                                        }
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         Text("Show icons", modifier = Modifier.weight(1f))
                                         Switch(
                                             checked = showIcons,
                                             onCheckedChange = { changeShowIcons(it) }
+                                        )
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Pin top buttons", modifier = Modifier.weight(1f))
+                                        Switch(
+                                            checked = pinBar,
+                                            onCheckedChange = { changePinBar(it) }
                                         )
                                     }
                                     Row(
@@ -438,7 +445,7 @@ open class NoLauncher : ComponentActivity() {
                                                     menuApp = null
                                                     launchApp(app)
                                                 }
-                                                .padding(vertical = 14.dp)
+                                                .padding(vertical = menuSpacing.dp)
                                         )
                                     }
                                     menuShortcuts.forEach { sc ->
@@ -449,7 +456,7 @@ open class NoLauncher : ComponentActivity() {
                                                     menuApp = null
                                                     launchShortcut(sc)
                                                 }
-                                                .padding(vertical = 10.dp),
+                                                .padding(vertical = (menuSpacing - 4).coerceAtLeast(0).dp),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             val shortcutIcon = menuShortcutIcons[sc.id]
@@ -475,7 +482,7 @@ open class NoLauncher : ComponentActivity() {
                                                 menuApp = null
                                                 openAppInfo(app)
                                             }
-                                            .padding(vertical = 14.dp)
+                                            .padding(vertical = menuSpacing.dp)
                                     )
                                     if (!tapMenu) {
                                         Text(
@@ -486,7 +493,7 @@ open class NoLauncher : ComponentActivity() {
                                                     menuApp = null
                                                     openZipScreen()
                                                 }
-                                                .padding(vertical = 14.dp)
+                                                .padding(vertical = menuSpacing.dp)
                                         )
                                     }
                                     Text(
@@ -498,7 +505,7 @@ open class NoLauncher : ComponentActivity() {
                                                 renameText = app.name
                                                 renameApp = app
                                             }
-                                            .padding(vertical = 14.dp)
+                                            .padding(vertical = menuSpacing.dp)
                                     )
                                     Text(
                                         text = if (isHidden) "Show" else "Hide",
@@ -508,7 +515,7 @@ open class NoLauncher : ComponentActivity() {
                                                 menuApp = null
                                                 setHidden(app.key, !isHidden)
                                             }
-                                            .padding(vertical = 14.dp)
+                                            .padding(vertical = menuSpacing.dp)
                                     )
                                     val menuCustoms = customs.filter { it.inMenu }
                                     if (menuCustoms.isNotEmpty()) {
@@ -523,7 +530,7 @@ open class NoLauncher : ComponentActivity() {
                                                     menuApp = null
                                                     launchComponent(ComponentName(c.pkg, c.cls), c.name)
                                                 }
-                                                .padding(vertical = 14.dp)
+                                                .padding(vertical = menuSpacing.dp)
                                         )
                                     }
                                 }
@@ -575,6 +582,46 @@ open class NoLauncher : ComponentActivity() {
             addAction(Intent.ACTION_PACKAGE_REMOVED)
             addDataScheme("package")
         })
+    }
+
+    @Composable
+    private fun TopBar() {
+        Row(modifier = Modifier.fillMaxWidth()) {
+            if (editing) {
+                Text(
+                    text = "Uncheck to hide apps",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .padding(16.dp)
+                )
+            } else {
+                Text(
+                    text = "Show/Hide apps",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            editing = true
+                            updateList()
+                        }
+                        .padding(16.dp)
+                )
+                Text(
+                    text = "Settings",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier
+                        .weight(1f)
+                        .clickable {
+                            settingsOpen = true
+                        }
+                        .padding(16.dp)
+                )
+            }
+        }
     }
 
     override fun onResume() {
@@ -773,6 +820,12 @@ open class NoLauncher : ComponentActivity() {
             .edit().putInt("spacing", spacing).apply()
     }
 
+    private fun changeMenuSpacing(value: Int) {
+        menuSpacing = value.coerceIn(0, 24)
+        getSharedPreferences("nolauncher", MODE_PRIVATE)
+            .edit().putInt("menuspacing", menuSpacing).apply()
+    }
+
     private fun changeShowIcons(value: Boolean) {
         showIcons = value
         getSharedPreferences("nolauncher", MODE_PRIVATE)
@@ -783,6 +836,12 @@ open class NoLauncher : ComponentActivity() {
         tapMenu = value
         getSharedPreferences("nolauncher", MODE_PRIVATE)
             .edit().putBoolean("tapmenu", value).apply()
+    }
+
+    private fun changePinBar(value: Boolean) {
+        pinBar = value
+        getSharedPreferences("nolauncher", MODE_PRIVATE)
+            .edit().putBoolean("pin", value).apply()
     }
 
     private fun changeRightLayout(value: Boolean) {
