@@ -25,6 +25,12 @@ class AssistSessionService : VoiceInteractionSessionService() {
 }
 
 class AssistSession(context: Context) : VoiceInteractionSession(context) {
+    override fun onCreate() {
+        super.onCreate()
+        // Своего окна у сессии нет: интерфейс показывает AssistActivity.
+        setUiEnabled(false)
+    }
+
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
         val intent = Intent(context, AssistActivity::class.java)
