@@ -35,9 +35,14 @@
             android:name=".AssistActivity"
             android:configChanges="uiMode"
             android:excludeFromRecents="true"
-            android:exported="false"
+            android:exported="true"
             android:stateNotNeeded="true"
-            android:windowSoftInputMode="stateUnspecified|adjustPan" />
+            android:windowSoftInputMode="stateUnspecified|adjustPan">
+            <intent-filter>
+                <action android:name="android.intent.action.ASSIST" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
 
         <service
             android:name=".AssistService"
