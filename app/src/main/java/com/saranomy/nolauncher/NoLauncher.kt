@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -57,6 +58,8 @@ open class NoLauncher : ComponentActivity() {
         var self: NoLauncher? = null
         var apps by mutableStateOf(listOf<AppItem>())
         var icons = HashMap<String, ImageBitmap>()
+        var lastActivity by mutableStateOf<String?>(null)
+        var assistState by mutableStateOf(0)
     }
 
     private var shown by mutableStateOf(listOf<AppItem>())
@@ -619,6 +622,7 @@ open class NoLauncher : ComponentActivity() {
 
     @Composable
     private fun TopBar() {
+        Column(modifier = Modifier.fillMaxWidth()) {
         Row(modifier = Modifier.fillMaxWidth()) {
             if (editing) {
                 Text(
@@ -654,6 +658,39 @@ open class NoLauncher : ComponentActivity() {
                         .padding(16.dp)
                 )
             }
+        }
+        if (assistMode && !editing) {
+            val previous = lastActivity
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = "Previous activity",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    SelectionContainer {
+                        Text(
+                            text = when {
+                                assistState == 2 && previous != null -> previous
+                                assistState == 2 -> "unknown"
+                                assistState == 1 -> "..."
+                                else -> "no screen data (turn on \"Use text from screen\" for the assistant)"
+                            },
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+                if (assistState == 2 && previous != null && previous.contains("/")) {
+                    TextButton(onClick = { openAddWith(previous) }) {
+                        Text("Add")
+                    }
+                }
+            }
+        }
         }
     }
 
@@ -839,6 +876,15 @@ open class NoLauncher : ComponentActivity() {
         }
         getSharedPreferences("nolauncher", MODE_PRIVATE)
             .edit().putString("custom", text).apply()
+    }
+
+    private fun openAddWith(component: String) {
+        addName = ""
+        addComponent = component
+        addInList = true
+        addInMenu = false
+        editIndex = -1
+        customAddOpen = true
     }
 
     private fun openEdit(index: Int) {
