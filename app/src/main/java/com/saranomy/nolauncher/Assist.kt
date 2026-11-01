@@ -1,5 +1,7 @@
 package com.saranomy.nolauncher
 
+import android.app.assist.AssistContent
+import android.app.assist.AssistStructure
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -33,6 +35,9 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
 
     override fun onShow(args: Bundle?, showFlags: Int) {
         super.onShow(args, showFlags)
+        NoLauncher.lastActivity = null
+        NoLauncher.assistState =
+            if ((showFlags and VoiceInteractionSession.SHOW_WITH_ASSIST) != 0) 1 else 0
         val intent = Intent(context, AssistActivity::class.java)
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -48,6 +53,23 @@ class AssistSession(context: Context) : VoiceInteractionSession(context) {
             } catch (ignored: Exception) {
             }
         }
+    }
+
+    @Suppress("DEPRECATION", "OVERRIDE_DEPRECATION")
+    override fun onHandleAssist(data: Bundle?, structure: AssistStructure?, content: AssistContent?) {
+        super.onHandleAssist(data, structure, content)
+        val component = try {
+            structure?.activityComponent
+        } catch (e: Exception) {
+            null
+        }
+        val pkg = data?.getString(Intent.EXTRA_ASSIST_PACKAGE)
+        NoLauncher.lastActivity = when {
+            component != null -> component.flattenToString()
+            pkg != null -> pkg + " (activity unknown)"
+            else -> null
+        }
+        NoLauncher.assistState = 2
     }
 }
 
