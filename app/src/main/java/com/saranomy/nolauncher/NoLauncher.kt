@@ -37,6 +37,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import kotlinx.coroutines.CoroutineScope
@@ -78,6 +79,7 @@ open class NoLauncher : ComponentActivity() {
     private var addComponent by mutableStateOf("")
     private var addInList by mutableStateOf(true)
     private var addInMenu by mutableStateOf(false)
+    private var editIndex by mutableStateOf(-1)
     private var menuApp by mutableStateOf<AppItem?>(null)
     private var menuShortcuts by mutableStateOf(listOf<ShortcutInfo>())
     private var menuShortcutIcons by mutableStateOf(mapOf<String, ImageBitmap>())
@@ -286,18 +288,29 @@ open class NoLauncher : ComponentActivity() {
                             title = { Text("Custom activities") },
                             text = {
                                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
-                                    if (customs.isEmpty()) {
-                                        Text(
-                                            text = "Nothing added yet.",
-                                            style = MaterialTheme.typography.bodySmall
-                                        )
-                                    }
+                                    Text(
+                                        text = if (customs.isEmpty()) "Nothing added yet." else "Tap a name to edit.",
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
                                     customs.forEachIndexed { index, c ->
                                         Row(
                                             modifier = Modifier.fillMaxWidth(),
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Text(c.name, modifier = Modifier.weight(1f))
+                                            Column(
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .clickable { openEdit(index) }
+                                                    .padding(vertical = 6.dp)
+                                            ) {
+                                                Text(c.name)
+                                                Text(
+                                                    text = c.pkg + "/" + c.cls,
+                                                    style = MaterialTheme.typography.bodySmall,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis
+                                                )
+                                            }
                                             TextButton(onClick = {
                                                 saveCustoms(customs.filterIndexed { i, _ -> i != index })
                                                 load()
@@ -339,6 +352,7 @@ open class NoLauncher : ComponentActivity() {
                                     addComponent = ""
                                     addInList = true
                                     addInMenu = false
+                                    editIndex = -1
                                     customAddOpen = true
                                 }) {
                                     Text("Add")
@@ -355,7 +369,7 @@ open class NoLauncher : ComponentActivity() {
                         val parsed = parseComponent(addComponent)
                         AlertDialog(
                             onDismissRequest = { customAddOpen = false },
-                            title = { Text("Add activity") },
+                            title = { Text(if (editIndex >= 0) "Edit activity" else "Add activity") },
                             text = {
                                 Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
                                     TextField(
@@ -404,21 +418,25 @@ open class NoLauncher : ComponentActivity() {
                                     enabled = parsed != null && addName.isNotBlank() && (addInList || addInMenu),
                                     onClick = {
                                         if (parsed != null) {
-                                            saveCustoms(
-                                                customs + CustomEntry(
-                                                    addName.trim(),
-                                                    parsed.packageName,
-                                                    parsed.className,
-                                                    addInList,
-                                                    addInMenu
-                                                )
+                                            val entry = CustomEntry(
+                                                addName.trim(),
+                                                parsed.packageName,
+                                                parsed.className,
+                                                addInList,
+                                                addInMenu
                                             )
+                                            if (editIndex >= 0 && editIndex < customs.size) {
+                                                saveCustoms(customs.mapIndexed { i, e -> if (i == editIndex) entry else e })
+                                                apps = listOf()
+                                            } else {
+                                                saveCustoms(customs + entry)
+                                            }
                                             load()
                                         }
                                         customAddOpen = false
                                     }
                                 ) {
-                                    Text("Add")
+                                    Text(if (editIndex >= 0) "Save" else "Add")
                                 }
                             },
                             dismissButton = {
@@ -430,6 +448,9 @@ open class NoLauncher : ComponentActivity() {
                     }
                     menuApp?.let { app ->
                         val isHidden = app.key in hidden
+                        val customIndex = customs.indexOfFirst {
+                            it.inList && it.pkg == app.component.packageName && it.cls == app.component.className
+                        }
                         AlertDialog(
                             onDismissRequest = { menuApp = null },
                             confirmButton = {},
@@ -507,6 +528,18 @@ open class NoLauncher : ComponentActivity() {
                                             }
                                             .padding(vertical = menuSpacing.dp)
                                     )
+                                    if (customIndex >= 0) {
+                                        Text(
+                                            text = "Edit activity",
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .clickable {
+                                                    menuApp = null
+                                                    openEdit(customIndex)
+                                                }
+                                                .padding(vertical = menuSpacing.dp)
+                                        )
+                                    }
                                     Text(
                                         text = if (isHidden) "Show" else "Hide",
                                         modifier = Modifier
@@ -681,7 +714,11 @@ open class NoLauncher : ComponentActivity() {
             )
             if (assistMode) finish()
         } catch (e: Exception) {
-            Toast.makeText(this, "Can't open $label", Toast.LENGTH_SHORT).show()
+            Toast.makeText(
+                this,
+                "Can't open " + label + ": " + e.javaClass.simpleName + " " + (e.message ?: "").take(100),
+                Toast.LENGTH_LONG
+            ).show()
         }
     }
 
@@ -804,13 +841,27 @@ open class NoLauncher : ComponentActivity() {
             .edit().putString("custom", text).apply()
     }
 
+    private fun openEdit(index: Int) {
+        val c = customs.getOrNull(index) ?: return
+        addName = c.name
+        addComponent = c.pkg + "/" + c.cls
+        addInList = c.inList
+        addInMenu = c.inMenu
+        editIndex = index
+        customAddOpen = true
+    }
+
     private fun parseComponent(text: String): ComponentName? {
         val parts = text.trim().split("/")
         if (parts.size != 2) return null
         val pkg = parts[0].trim()
         var cls = parts[1].trim()
         if (pkg.isEmpty() || cls.isEmpty()) return null
-        if (cls.startsWith(".")) cls = pkg + cls
+        if (cls.startsWith(".")) {
+            cls = pkg + cls
+        } else if (!cls.contains(".")) {
+            cls = pkg + "." + cls
+        }
         return ComponentName(pkg, cls)
     }
 
