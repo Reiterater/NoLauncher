@@ -13,6 +13,8 @@ import android.graphics.drawable.Drawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -50,8 +52,13 @@ data class CustomEntry(
     val pkg: String,
     val cls: String,
     val inList: Boolean,
-    val inMenu: Boolean
+    val inMenu: Boolean,
+    val action: String = ""
 )
+
+fun CustomEntry.component(): ComponentName {
+    return if (pkg.isNotEmpty() && cls.isNotEmpty()) ComponentName(pkg, cls) else ComponentName("action", action)
+}
 
 open class NoLauncher : ComponentActivity() {
     companion object {
@@ -59,6 +66,7 @@ open class NoLauncher : ComponentActivity() {
         var apps by mutableStateOf(listOf<AppItem>())
         var icons = HashMap<String, ImageBitmap>()
         var lastActivity by mutableStateOf<String?>(null)
+        var lastTitle by mutableStateOf<String?>(null)
         var assistState by mutableStateOf(0)
     }
 
@@ -80,6 +88,7 @@ open class NoLauncher : ComponentActivity() {
     private var customAddOpen by mutableStateOf(false)
     private var addName by mutableStateOf("")
     private var addComponent by mutableStateOf("")
+    private var addAction by mutableStateOf("")
     private var addInList by mutableStateOf(true)
     private var addInMenu by mutableStateOf(false)
     private var editIndex by mutableStateOf(-1)
@@ -308,7 +317,7 @@ open class NoLauncher : ComponentActivity() {
                                             ) {
                                                 Text(c.name)
                                                 Text(
-                                                    text = c.pkg + "/" + c.cls,
+                                                    text = describe(c),
                                                     style = MaterialTheme.typography.bodySmall,
                                                     maxLines = 1,
                                                     overflow = TextOverflow.Ellipsis
@@ -353,6 +362,7 @@ open class NoLauncher : ComponentActivity() {
                                 TextButton(onClick = {
                                     addName = ""
                                     addComponent = ""
+                                    addAction = ""
                                     addInList = true
                                     addInMenu = false
                                     editIndex = -1
@@ -390,7 +400,17 @@ open class NoLauncher : ComponentActivity() {
                                         onValueChange = {
                                             addComponent = it.replace("\n", "").replace("\t", "").replace(" ", "")
                                         },
-                                        placeholder = { Text("package/activity class") },
+                                        placeholder = { Text("package/activity class (optional)") },
+                                        singleLine = true,
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    TextField(
+                                        value = addAction,
+                                        onValueChange = {
+                                            addAction = it.replace("\n", "").replace("\t", "").replace(" ", "")
+                                        },
+                                        placeholder = { Text("action, e.g. android.settings.SETTINGS (optional)") },
                                         singleLine = true,
                                         modifier = Modifier.fillMaxWidth()
                                     )
@@ -418,15 +438,18 @@ open class NoLauncher : ComponentActivity() {
                             },
                             confirmButton = {
                                 TextButton(
-                                    enabled = parsed != null && addName.isNotBlank() && (addInList || addInMenu),
+                                    enabled = addName.isNotBlank() && (addInList || addInMenu) &&
+                                            (addComponent.isEmpty() || parsed != null) &&
+                                            (parsed != null || addAction.isNotEmpty()),
                                     onClick = {
-                                        if (parsed != null) {
+                                        if (parsed != null || addAction.isNotEmpty()) {
                                             val entry = CustomEntry(
                                                 addName.trim(),
-                                                parsed.packageName,
-                                                parsed.className,
+                                                parsed?.packageName ?: "",
+                                                parsed?.className ?: "",
                                                 addInList,
-                                                addInMenu
+                                                addInMenu,
+                                                addAction.trim()
                                             )
                                             if (editIndex >= 0 && editIndex < customs.size) {
                                                 saveCustoms(customs.mapIndexed { i, e -> if (i == editIndex) entry else e })
@@ -452,7 +475,7 @@ open class NoLauncher : ComponentActivity() {
                     menuApp?.let { app ->
                         val isHidden = app.key in hidden
                         val customIndex = customs.indexOfFirst {
-                            it.inList && it.pkg == app.component.packageName && it.cls == app.component.className
+                            it.inList && it.component() == app.component
                         }
                         AlertDialog(
                             onDismissRequest = { menuApp = null },
@@ -564,7 +587,7 @@ open class NoLauncher : ComponentActivity() {
                                                 .fillMaxWidth()
                                                 .clickable {
                                                     menuApp = null
-                                                    launchComponent(ComponentName(c.pkg, c.cls), c.name)
+                                                    launchCustom(c)
                                                 }
                                                 .padding(vertical = menuSpacing.dp)
                                         )
@@ -683,6 +706,15 @@ open class NoLauncher : ComponentActivity() {
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
+                    val screenTitle = lastTitle
+                    if (assistState == 2 && screenTitle != null) {
+                        SelectionContainer {
+                            Text(
+                                text = "Screen: " + screenTitle,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+                    }
                 }
                 if (assistState == 2 && previous != null && previous.contains("/")) {
                     TextButton(onClick = { openAddWith(previous) }) {
@@ -713,7 +745,7 @@ open class NoLauncher : ComponentActivity() {
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (assistMode && !editing) {
+        if (!editing) {
             finish()
             return
         }
@@ -723,11 +755,9 @@ open class NoLauncher : ComponentActivity() {
     }
 
     private fun launchApp(app: AppItem) {
-        val isCustom = customs.any {
-            it.inList && it.pkg == app.component.packageName && it.cls == app.component.className
-        }
-        if (isCustom) {
-            launchComponent(app.component, app.name)
+        val custom = customs.firstOrNull { it.inList && it.component() == app.component }
+        if (custom != null) {
+            launchCustom(custom)
             return
         }
         try {
@@ -737,23 +767,31 @@ open class NoLauncher : ComponentActivity() {
                     .setComponent(app.component)
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
             )
-            if (assistMode) finish()
+            unloadSelf()
         } catch (ignored: Exception) {
         }
     }
 
-    private fun launchComponent(component: ComponentName, label: String) {
+    private fun unloadSelf() {
+        finishAndRemoveTask()
+        Handler(Looper.getMainLooper()).postDelayed({
+            android.os.Process.killProcess(android.os.Process.myPid())
+        }, 500)
+    }
+
+    private fun launchCustom(c: CustomEntry) {
         try {
-            startActivity(
-                Intent()
-                    .setComponent(component)
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            )
-            if (assistMode) finish()
+            val intent = if (c.action.isNotEmpty()) Intent(c.action) else Intent()
+            if (c.pkg.isNotEmpty() && c.cls.isNotEmpty()) {
+                intent.setComponent(ComponentName(c.pkg, c.cls))
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            startActivity(intent)
+            unloadSelf()
         } catch (e: Exception) {
             Toast.makeText(
                 this,
-                "Can't open " + label + ": " + e.javaClass.simpleName + " " + (e.message ?: "").take(100),
+                "Can't open " + c.name + ": " + e.javaClass.simpleName + " " + (e.message ?: "").take(100),
                 Toast.LENGTH_LONG
             ).show()
         }
@@ -864,7 +902,7 @@ open class NoLauncher : ComponentActivity() {
     private fun parseCustoms(raw: String?): List<CustomEntry> {
         return raw.orEmpty().split("\n").mapNotNull { line ->
             val f = line.split("\t")
-            if (f.size == 5) CustomEntry(f[0], f[1], f[2], f[3] == "1", f[4] == "1") else null
+            if (f.size >= 5) CustomEntry(f[0], f[1], f[2], f[3] == "1", f[4] == "1", if (f.size >= 6) f[5] else "") else null
         }
     }
 
@@ -872,7 +910,7 @@ open class NoLauncher : ComponentActivity() {
         customs = list
         val text = list.joinToString("\n") {
             it.name + "\t" + it.pkg + "\t" + it.cls + "\t" +
-                    (if (it.inList) "1" else "0") + "\t" + (if (it.inMenu) "1" else "0")
+                    (if (it.inList) "1" else "0") + "\t" + (if (it.inMenu) "1" else "0") + "\t" + it.action
         }
         getSharedPreferences("nolauncher", MODE_PRIVATE)
             .edit().putString("custom", text).apply()
@@ -881,16 +919,23 @@ open class NoLauncher : ComponentActivity() {
     private fun openAddWith(component: String) {
         addName = ""
         addComponent = component
+        addAction = ""
         addInList = true
         addInMenu = false
         editIndex = -1
         customAddOpen = true
     }
 
+    private fun describe(c: CustomEntry): String {
+        val comp = if (c.pkg.isNotEmpty()) c.pkg + "/" + c.cls else ""
+        return (comp + " " + c.action).trim()
+    }
+
     private fun openEdit(index: Int) {
         val c = customs.getOrNull(index) ?: return
         addName = c.name
-        addComponent = c.pkg + "/" + c.cls
+        addComponent = if (c.pkg.isNotEmpty()) c.pkg + "/" + c.cls else ""
+        addAction = c.action
         addInList = c.inList
         addInMenu = c.inMenu
         editIndex = index
@@ -968,7 +1013,7 @@ open class NoLauncher : ComponentActivity() {
                 val expectedKeys = HashSet<String>()
                 result.forEach { expectedKeys.add(it.cn().flattenToString()) }
                 expectedKeys.add(own.flattenToString())
-                customList.forEach { expectedKeys.add(ComponentName(it.pkg, it.cls).flattenToString()) }
+                customList.forEach { expectedKeys.add(it.component().flattenToString()) }
 
                 val appHashCount = apps.map { it.key }.toSet().sumOf { it.hashCode() }
                 val resultHashCount = expectedKeys.sumOf { it.hashCode() }
@@ -991,8 +1036,8 @@ open class NoLauncher : ComponentActivity() {
                         }
                     }
                     customList.forEach { c ->
-                        val cn = ComponentName(c.pkg, c.cls)
-                        val item = AppItem(c.name, c.pkg, cn)
+                        val cn = c.component()
+                        val item = AppItem(c.name, cn.packageName, cn)
                         if (temp.none { it.key == item.key }) {
                             temp.add(item)
                         }
@@ -1001,8 +1046,15 @@ open class NoLauncher : ComponentActivity() {
                                 icon(item.key, packageManager.getActivityIcon(cn))
                             } catch (ignored: Exception) {
                                 try {
-                                    icon(item.key, packageManager.getApplicationIcon(c.pkg))
+                                    icon(item.key, packageManager.getApplicationIcon(cn.packageName))
                                 } catch (ignored2: Exception) {
+                                    try {
+                                        val info = packageManager.resolveActivity(Intent(c.action), 0)
+                                        if (info != null) {
+                                            icon(item.key, info.loadIcon(packageManager))
+                                        }
+                                    } catch (ignored3: Exception) {
+                                    }
                                 }
                             }
                         }
